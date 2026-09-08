@@ -29,7 +29,7 @@ A professional, open-source decibel meter web app. Real-time sound pressure leve
 
 ## Accuracy
 
-Phone microphone sensitivity varies by device and model. This app provides reliable **relative** measurements for comparing noise levels. For **absolute SPL accuracy**, calibrate against a certified sound level meter using the calibration offset in Settings.
+Phone microphone sensitivity varies by device and model. The default full-scale reference is 115 dB SPL (typical for phone mics, which clip around 110-125 dB). This app provides reliable **relative** measurements for comparing noise levels. For **absolute SPL accuracy**, calibrate against a certified sound level meter using the calibration offset in Settings. The spectrum display is scaled in the SPL domain: each frame the FFT bins are shifted so the spectrum's total energy matches the SPL reading, keeping bars and gauge consistent.
 
 The A-weighting filter follows the IEC 61672-1 standard (biquad cascade via bilinear transform).
 
