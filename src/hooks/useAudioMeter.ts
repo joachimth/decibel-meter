@@ -3,11 +3,12 @@ import type { MeterSettings, MeterStats, HistorySample } from '../types'
 import {
   weightingCorrectionFromFft,
   bufferRmsToDb,
+  spectrumShiftDb,
   TimeWeighting,
   PeakDetector,
 } from '../lib/db'
 
-const DBFS_REFERENCE = 100 // dB SPL at full-scale. User calibrates with offset.
+const DBFS_REFERENCE = 115 // dB SPL at full-scale. Phone mics clip around 110-125 dB SPL; 115 is a realistic default. User calibrates with offset.
 const HISTORY_INTERVAL_MS = 250 // sample history every 250ms
 const MAX_HISTORY_SAMPLES = 14400 // ~1 hour at 250ms interval
 
@@ -116,7 +117,19 @@ export function useAudioMeter(settings: MeterSettings) {
 
     // Update state
     setCurrentDb(weightedDb)
-    setSpectrumData(new Float32Array(fqBuf))
+
+    // Spectrum display: shift raw dBFS bins into the SPL domain so the
+    // display scale (maxDisplay-dynamicRange .. maxDisplay) shows real signals
+    const specShift = spectrumShiftDb(
+      fqBuf as Float32Array<ArrayBuffer>,
+      baseDb + settingsRef.current.calibrationOffset,
+    )
+    const displaySpec = new Float32Array(fqBuf.length)
+    for (let i = 0; i < fqBuf.length; i++) {
+      const v = fqBuf[i]
+      displaySpec[i] = v === -Infinity || isNaN(v) ? -Infinity : v + specShift
+    }
+    setSpectrumData(displaySpec)
 
     const elapsed = realNow - startTsRef.current
     setElapsedMs(elapsed)
