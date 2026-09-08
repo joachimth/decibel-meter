@@ -141,6 +141,35 @@ export function weightingCorrectionFromFft(
 }
 
 /**
+ * Compute the per-frame shift (in dB) that maps raw FFT dBFS bin values into
+ * the SPL display domain, consistent with the time-domain base SPL.
+ *
+ * The raw getFloatFrequencyData values are dBFS per bin and (due to FFT
+ * normalization + windowing) sit far below the SPL reading — typically
+ * -80..-140 dBFS — so a display scaled 0..-dynamicRange shows nothing.
+ *
+ * We compute the total power summed over bins and shift every bin by
+ * `baseDb - 10*log10(totalPower)`. After the shift, the spectrum's summed
+ * power equals 10^(baseDb/10), so spectrum peaks sit ~3-6 dB under the SPL
+ * gauge reading (energy is spread across bins), exactly like a real analyzer.
+ *
+ * @param floatFreqData - Output of AnalyserNode.getFloatFrequencyData() (dBFS)
+ * @param baseDb - Time-domain base SPL (dB) for the same frame
+ * @returns Shift in dB to add to every bin (0 if data is unusable)
+ */
+export function spectrumShiftDb(floatFreqData: Float32Array, baseDb: number): number {
+  if (!Number.isFinite(baseDb)) return 0
+  let totalPower = 0
+  for (let i = 0; i < floatFreqData.length; i++) {
+    const dbFs = floatFreqData[i]
+    if (dbFs === -Infinity || isNaN(dbFs)) continue
+    totalPower += Math.pow(10, dbFs / 10)
+  }
+  if (totalPower <= 0) return 0
+  return baseDb - 10 * Math.log10(totalPower)
+}
+
+/**
  * Response time constants.
  * Slow: 1s time constant
  * Fast: 0.125s time constant
