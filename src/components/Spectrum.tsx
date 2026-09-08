@@ -4,10 +4,11 @@ interface SpectrumProps {
   data: Float32Array | null
   sampleRate: number
   dynamicRange: number
+  maxDisplay: number
   isListening: boolean
 }
 
-export function Spectrum({ data, sampleRate, dynamicRange, isListening }: SpectrumProps) {
+export function Spectrum({ data, sampleRate, dynamicRange, maxDisplay, isListening }: SpectrumProps) {
   const bins = useMemo(() => {
     if (!data) return []
     const binCount = data.length
@@ -46,11 +47,14 @@ export function Spectrum({ data, sampleRate, dynamicRange, isListening }: Spectr
     return bands
   }, [data, sampleRate])
 
-  const minDb = -dynamicRange
+  // Spectrum data arrives in the SPL display domain (shifted per frame so its
+  // summed power matches the SPL reading). Scale over dynamicRange below maxDisplay.
+  const topDb = maxDisplay
+  const bottomDb = maxDisplay - dynamicRange
 
   const dbToHeight = (db: number) => {
-    const clamped = Math.max(minDb, Math.min(0, db))
-    return ((clamped - minDb) / (0 - minDb)) * 100
+    const clamped = Math.max(bottomDb, Math.min(topDb, db))
+    return ((clamped - bottomDb) / (topDb - bottomDb)) * 100
   }
 
   const dbToColor = (db: number) => {
@@ -75,11 +79,11 @@ export function Spectrum({ data, sampleRate, dynamicRange, isListening }: Spectr
       {/* dB scale on left */}
       <div className="flex flex-1 min-h-0">
         <div className="flex flex-col justify-between w-10 py-1 text-[9px] text-slate-500 font-mono text-right pr-1">
-          <span>0</span>
-          <span>{Math.round(-dynamicRange * 0.25)}</span>
-          <span>{Math.round(-dynamicRange * 0.5)}</span>
-          <span>{Math.round(-dynamicRange * 0.75)}</span>
-          <span>{-dynamicRange}</span>
+          <span>{maxDisplay}</span>
+          <span>{Math.round(maxDisplay - dynamicRange * 0.25)}</span>
+          <span>{Math.round(maxDisplay - dynamicRange * 0.5)}</span>
+          <span>{Math.round(maxDisplay - dynamicRange * 0.75)}</span>
+          <span>{maxDisplay - dynamicRange}</span>
         </div>
         <div className="relative flex-1 border-l border-slate-800">
           {bins.length === 0 ? (
@@ -96,7 +100,7 @@ export function Spectrum({ data, sampleRate, dynamicRange, isListening }: Spectr
                     height: `${dbToHeight(band.db)}%`,
                     backgroundColor: dbToColor(band.db),
                     opacity: isListening ? 0.85 : 0.3,
-                    boxShadow: band.db > -20 ? `0 0 4px ${dbToColor(band.db)}80` : 'none',
+                    boxShadow: dbToHeight(band.db) > 80 ? `0 0 4px ${dbToColor(band.db)}80` : 'none',
                   }}
                 />
               ))}
