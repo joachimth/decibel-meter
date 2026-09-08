@@ -181,6 +181,7 @@ export default function App() {
                 data={spectrumData}
                 sampleRate={sampleRate}
                 dynamicRange={settings.dynamicRange}
+                maxDisplay={settings.maxDisplay}
                 isListening={isListening}
               />
             </div>
