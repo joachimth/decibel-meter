@@ -90,46 +90,54 @@ export function bufferRmsToDb(buf: Float32Array, dbFullScale = 94): number {
 }
 
 /**
- * Compute weighted SPL from FFT magnitude data.
- * @param floatFreqData - Output of AnalyserNode.getFloatFrequencyData() (dBFS values)
+ * Compute the frequency-weighting correction in dB from FFT data.
+ *
+ * The SPL base level is computed from the time-domain RMS (correct and stable).
+ * The weighting is applied as a *relative* correction: we compare the total
+ * weighted spectral energy to the total unweighted spectral energy, and the
+ * difference (in dB) is added to the time-domain SPL.
+ *
+ * This avoids the FFT normalization problem that made the old approach
+ * produce negative values: FFT bin magnitudes are much smaller than
+ * time-domain RMS, so computing SPL directly from them gave wrong levels.
+ *
+ * @param floatFreqData - Output of AnalyserNode.getFloatFrequencyData() (dBFS)
  * @param sampleRate - AudioContext sample rate
  * @param fftSize - AnalyserNode FFT size
  * @param weighting - Weighting type
- * @param dbFullScale - Reference dB for full-scale
- * @returns Weighted dB SPL
+ * @returns Correction in dB to add to the unweighted SPL (can be negative)
  */
-export function weightedSplFromFft(
+export function weightingCorrectionFromFft(
   floatFreqData: Float32Array,
   sampleRate: number,
   fftSize: number,
   weighting: Weighting,
-  dbFullScale = 94,
 ): number {
+  if (weighting === 'Z') return 0
+
   const weightFunc = getWeightingFunc(weighting)
   const binCount = floatFreqData.length
   const freqPerBin = sampleRate / fftSize
 
-  let powerSum = 0
-  let validBins = 0
+  let unweightedPower = 0
+  let weightedPower = 0
 
   for (let i = 0; i < binCount; i++) {
-    const freq = i * freqPerBin
     const dbFs = floatFreqData[i]
     if (dbFs === -Infinity || isNaN(dbFs)) continue
 
-    // Convert dBFS to linear magnitude
+    const freq = i * freqPerBin
     const mag = Math.pow(10, dbFs / 20)
-    // Apply frequency weighting correction
+    const power = mag * mag
+    unweightedPower += power
+
     const weightDb = weightFunc(freq)
     const weightLin = Math.pow(10, weightDb / 20)
-    const weightedMag = mag * weightLin
-    powerSum += weightedMag * weightedMag
-    validBins++
+    weightedPower += power * weightLin * weightLin
   }
 
-  if (validBins === 0 || powerSum <= 0) return -Infinity
-  const rms = Math.sqrt(powerSum / validBins)
-  return rmsToDb(rms, dbFullScale)
+  if (unweightedPower <= 0 || weightedPower <= 0) return 0
+  return 10 * Math.log10(weightedPower / unweightedPower)
 }
 
 /**
