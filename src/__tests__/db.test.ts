@@ -7,6 +7,7 @@ import {
   zWeightDb,
   getWeightingFunc,
   weightingCorrectionFromFft,
+  spectrumShiftDb,
   TimeWeighting,
   PeakDetector,
 } from '../lib/db'
@@ -141,6 +142,36 @@ describe('weightingCorrectionFromFft', () => {
     const midCorr = weightingCorrectionFromFft(midData, 48000, 2048, 'A')
 
     expect(lowCorr).toBeLessThan(midCorr)
+  })
+})
+
+describe('spectrumShiftDb', () => {
+  it('shifts bins so summed spectrum power equals the base SPL power', () => {
+    // Flat spectrum: 1024 bins each at -20 dBFS
+    const bins = new Float32Array(1024).fill(-20)
+    const baseDb = 60
+    const shift = spectrumShiftDb(bins, baseDb)
+    // Total power = 1024 * 10^-2 = 10.24 -> 10*log10 = 10.1
+    expect(shift).toBeCloseTo(baseDb - 10 * Math.log10(1024 * 0.01), 5)
+    // After shift, summed power of displayed values must equal 10^(baseDb/10)
+    const summedPower = bins.reduce((acc, dbFs) => acc + Math.pow(10, (dbFs + shift) / 10), 0)
+    expect(10 * Math.log10(summedPower)).toBeCloseTo(baseDb, 5)
+  })
+
+  it('is invariant to a constant offset added to all bins', () => {
+    const a = new Float32Array(512).fill(-40)
+    const b = new Float32Array(512).fill(-60)
+    const shiftA = spectrumShiftDb(a, 55)
+    const shiftB = spectrumShiftDb(b, 55)
+    // Shift compensates the bin offset exactly
+    expect(shiftB - shiftA).toBeCloseTo(20, 5)
+  })
+
+  it('returns 0 for non-finite base level or dead spectrum', () => {
+    const bins = new Float32Array(64).fill(-Infinity)
+    expect(spectrumShiftDb(bins, 60)).toBe(0)
+    expect(spectrumShiftDb(new Float32Array(64).fill(-20), -Infinity)).toBe(0)
+    expect(spectrumShiftDb(new Float32Array(64).fill(-20), NaN)).toBe(0)
   })
 })
 
