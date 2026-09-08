@@ -6,7 +6,7 @@ import {
   cWeightDb,
   zWeightDb,
   getWeightingFunc,
-  weightedSplFromFft,
+  weightingCorrectionFromFft,
   TimeWeighting,
   PeakDetector,
 } from '../lib/db'
@@ -107,42 +107,40 @@ describe('getWeightingFunc', () => {
   })
 })
 
-describe('weightedSplFromFft', () => {
-  it('returns -Infinity for all-silent data', () => {
+describe('weightingCorrectionFromFft', () => {
+  it('returns 0 for all-silent data', () => {
     const data = new Float32Array(1024).fill(-Infinity)
-    expect(weightedSplFromFft(data, 48000, 2048, 'A')).toBe(-Infinity)
+    expect(weightingCorrectionFromFft(data, 48000, 2048, 'A')).toBe(0)
   })
 
-  it('returns finite value for non-silent data', () => {
-    const data = new Float32Array(1024).fill(-20) // -20 dBFS all bins
-    const result = weightedSplFromFft(data, 48000, 2048, 'Z')
-    expect(Number.isFinite(result)).toBe(true)
-    expect(result).toBeGreaterThan(-Infinity)
+  it('returns 0 for Z-weighting regardless of data', () => {
+    const data = new Float32Array(1024).fill(-20)
+    expect(weightingCorrectionFromFft(data, 48000, 2048, 'Z')).toBe(0)
   })
 
-  it('A-weighting gives lower SPL than Z for low-frequency content', () => {
-    // Create data with energy only in low-frequency bins (below 200 Hz)
-    const data = new Float32Array(1024).fill(-Infinity)
-    for (let i = 0; i < 10; i++) {
-      // bins 0-9 = 0 to ~234 Hz
-      data[i] = -10 // -10 dBFS
-    }
-    const zResult = weightedSplFromFft(data, 48000, 2048, 'Z')
-    const aResult = weightedSplFromFft(data, 48000, 2048, 'A')
-    expect(aResult).toBeLessThan(zResult)
+  it('returns a negative correction for A-weighting with broadband signal', () => {
+    // A-weighting attenuates low and high frequencies, so the correction
+    // for broadband noise should be negative (less energy after weighting)
+    const data = new Float32Array(1024).fill(-20)
+    const result = weightingCorrectionFromFft(data, 48000, 2048, 'A')
+    expect(result).toBeLessThan(0)
   })
 
-  it('A-weighting gives similar SPL to Z for mid-frequency content', () => {
-    // Energy around 1-2 kHz where A-weighting is near 0 dB
-    const data = new Float32Array(1024).fill(-Infinity)
+  it('A-weighting correction is more negative for low-frequency content than mid', () => {
+    // Low-frequency only
+    const lowData = new Float32Array(1024).fill(-Infinity)
+    for (let i = 0; i < 10; i++) lowData[i] = -10
+    const lowCorr = weightingCorrectionFromFft(lowData, 48000, 2048, 'A')
+
+    // Mid-frequency only (around 1kHz)
+    const midData = new Float32Array(1024).fill(-Infinity)
     const bin1k = Math.round(1000 / (48000 / 2048))
     for (let i = bin1k - 5; i <= bin1k + 5; i++) {
-      if (i >= 0 && i < data.length) data[i] = -10
+      if (i >= 0 && i < midData.length) midData[i] = -10
     }
-    const zResult = weightedSplFromFft(data, 48000, 2048, 'Z')
-    const aResult = weightedSplFromFft(data, 48000, 2048, 'A')
-    // Should be within a few dB of each other
-    expect(Math.abs(aResult - zResult)).toBeLessThan(5)
+    const midCorr = weightingCorrectionFromFft(midData, 48000, 2048, 'A')
+
+    expect(lowCorr).toBeLessThan(midCorr)
   })
 })
 
