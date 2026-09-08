@@ -1,11 +1,13 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { MeterSettings, MeterStats, HistorySample } from '../types'
 import {
-  weightedSplFromFft,
+  weightingCorrectionFromFft,
+  bufferRmsToDb,
   TimeWeighting,
   PeakDetector,
 } from '../lib/db'
 
+const DBFS_REFERENCE = 100 // dB SPL at full-scale. User calibrates with offset.
 const HISTORY_INTERVAL_MS = 250 // sample history every 250ms
 const MAX_HISTORY_SAMPLES = 14400 // ~1 hour at 250ms interval
 
@@ -41,6 +43,7 @@ export function useAudioMeter(settings: MeterSettings) {
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const rafRef = useRef<number>(0)
+  const timeDomainRef = useRef<Float32Array>(new Float32Array(2048))
   const freqDataRef = useRef<Float32Array>(new Float32Array(1024))
   const timeWeightingRef = useRef<TimeWeighting | null>(null)
   const peakDetectorRef = useRef<PeakDetector | null>(null)
@@ -72,17 +75,23 @@ export function useAudioMeter(settings: MeterSettings) {
     const analyser = analyserRef.current
     const fqBuf = freqDataRef.current
 
-    // Get frequency data first (needed for weighted SPL)
+    // Get frequency data for weighting correction and spectrum display
     analyser.getFloatFrequencyData(fqBuf as Float32Array<ArrayBuffer>)
 
-    // Compute weighted SPL from FFT
+    // Base SPL from time-domain RMS (stable, correct level)
+    const tdBuf = timeDomainRef.current
+    analyser.getFloatTimeDomainData(tdBuf as Float32Array<ArrayBuffer>)
     const fs = audioContextRef.current?.sampleRate ?? 48000
-    const instantDb = weightedSplFromFft(
+    const baseDb = bufferRmsToDb(tdBuf, DBFS_REFERENCE)
+
+    // Apply frequency weighting as a relative correction from FFT
+    const weightCorr = weightingCorrectionFromFft(
       fqBuf as Float32Array<ArrayBuffer>,
       fs,
       analyser.fftSize,
       settingsRef.current.weighting,
-    ) + settingsRef.current.calibrationOffset
+    )
+    const instantDb = baseDb + weightCorr + settingsRef.current.calibrationOffset
 
     // Apply time weighting
     const tw = timeWeightingRef.current
